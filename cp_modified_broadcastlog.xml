@@ -1,0 +1,14 @@
+<project basedir="." default="all" name="pengyun-models">
+  <property name="generated.broadcastlog.file.java"
+    value="${basedir}/src/main/java/py/proto/Broadcastlog.java"/>
+  <property name="modified.broadcastlog.file.java"
+    value="${basedir}/src/main/resources/modified-classes/Broadcastlog.java"/>
+
+
+  <target description="overwrite the generated Broadcastlog.java with a modified one for performance improvement"
+    name="all">
+    <copy file="${modified.broadcastlog.file.java}" overwrite="true"
+      tofile="${generated.broadcastlog.file.java}" verbose="true"/>
+  </target>
+</project>
+

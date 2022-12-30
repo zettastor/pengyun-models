@@ -1,0 +1,380 @@
+option java_package = "py.proto";
+
+
+enum PbIoUnitResult {
+    OK = 1;
+    OUT_OF_RANGE = 2;
+    INPUT_HAS_NO_DATA = 3;
+    CHECKSUM_MISMATCHED = 4;
+    SECONDARY_NOT_STABLE = 5; // presecondary can receive the write request, but the write request not be included in quorum member.
+    FREE = 6; // when the page never writes, if you read the page, then response Free.
+    PRIMARY_COMMITTED = 7;
+    BROADCAST_FAILED = 8; // this happens when primary failed broadcasting to check the result of secondaries
+    EXHAUSTED = 9; // there is no enough memory for saving the request unit, especially for write.
+    SKIP = 10; // the server meet exception and can not go on servicing the left request units, then the units will be set to Skip.
+    MERGE_FAIL = 11; // when correcting a page or reading data from secondaries, should merge all response,reset the result when failing to merge.
+    MERGE_OK = 12; // when merging read respones, the base response unit may be free status, others responses has data, so after merging, its status will become MergeOk
+}
+
+enum PbBroadcastLogStatus {
+    CREATING = 1; // this status must come from datanode
+    CREATED = 2; // this status must come from datanode
+    COMMITTED = 3; // this status must come from coordinator
+    ABORT = 4;
+    ABORT_CONFIRMED = 5;
+}
+
+enum RequestOption {
+    CHECK_PRIMARY = 1;
+    CHECK_SECONDARY = 2;
+    CONFIRM_UNREACHABLE = 3;
+    CHECK_TEMP_PRIMARY = 4;
+    TP_CHECK_SECONDARY = 5;
+    CONFIRM_TP_UNREACHABLE = 6;
+    SECONDARY_CHECK_SECONDARY = 7;
+}
+
+message PbBroadcastLog {
+    required int64 logUuid = 1;
+    required int64 logId = 2;
+    required int64 offset = 3;
+    required int64 checksum = 4;
+    required int32 length = 5;
+    required PbBroadcastLogStatus logStatus = 6;
+    optional bytes data = 8;
+}
+
+message PbBroadcastLogManager {
+    required int64 requestId = 1;
+    repeated PbBroadcastLog broadcastLogs = 2;
+}
+
+message PbWriteRequestUnit {
+    required int64 logUuid = 1;
+    required int64 logId = 2;
+    required int64 offset = 3; // the logic offset at the volume
+    required int32 length = 4;
+    optional int64 checksum = 6;
+    optional int64 srcOffset = 7; // the source write logic offset when some page has not cloned at linked clone volume
+    optional int32 srcLength = 8;
+    required bool randomWrite = 9;
+}
+
+message PbMembership {
+    required int64 primary = 1;
+    required int32 epoch = 2;
+    required int32 generation = 3;
+    repeated int64 secondaries = 4;
+    repeated int64 joiningSecondaries = 5;
+    repeated int64 arbiters = 6;
+    repeated int64 inactiveSecondaries = 7;
+    optional int64 tempPrimary = 8;
+    optional int64 secondaryCandidate = 9;
+    optional int64 primaryCandidate = 10;
+}
+
+message PbWriteRequest {
+    required int64 requestId = 1;
+    required int64 volumeId = 2;
+    required int32 segIndex = 3;
+    required int32 failTimes = 4;
+    required bool zombieWrite = 5;
+    required PbMembership membership = 6;
+    repeated PbWriteRequestUnit requestUnits = 8;
+    repeated PbBroadcastLogManager broadcastManagers = 9; // carry with last log results
+    optional bool unstablePrimaryWrite = 10;
+    required int64 requestTime = 11;
+}
+
+message PbWriteResponseUnit {
+    required int64 logUuid = 1;
+    required int64 logId = 2;
+    required PbIoUnitResult logResult = 3;
+}
+
+message PbWriteResponse {
+    required int64 requestId = 1;
+    repeated PbWriteResponseUnit responseUnits = 2; // the result of all request units
+    repeated PbBroadcastLogManager logManagersToCommit = 3; // which contain the logs to be committed.
+    optional PbMembership membership = 4; // if primary has found the membership changed, the variable will be filled.
+}
+
+/*************************read begin *****************/
+message PbReadRequestUnit {
+    required int64 offset = 1;
+    required int32 length = 2;
+}
+
+enum ReadCause {
+    FETCH = 1; // coordinator reads from primary.
+    CORRECTION = 2; // primary or secondary reads from secondary or primary when fetching data for correction.
+    MERGE = 3; // coordinator reads from secondaries.
+    CHECK = 4; // when reading, send a check request to S for supporting P.
+}
+
+message PbReadRequest {
+    required int64 requestId = 1;
+    required int64 volumeId = 2;
+    required int32 segIndex = 3;
+    required int32 failTimes = 4;
+    required ReadCause readCause = 6; // if primary want to correct its corrupted page or the coordinator reads from two secondaries, it will be true.
+    required PbMembership membership = 7;
+    repeated PbReadRequestUnit requestUnits = 8;
+    repeated int64 logsToCommit = 9;
+    optional int64 myInstanceId = 11;
+    optional bool withLogsOnly = 12;
+}
+
+message PbReadResponseUnit {
+    required int64 offset = 1;
+    required int32 length = 2;
+    required PbIoUnitResult result = 3;
+    repeated PbBroadcastLog logsToMerge = 4;
+    optional int64 checksum = 5;
+}
+
+message PbReadResponse {
+    required int64 requestId = 1;
+    repeated PbReadResponseUnit responseUnits = 2;
+    optional int64 pclId = 3;
+}
+
+//-------------------------------------- for sync log begin--------------------
+enum PbErrorCode {
+    Ok                          = 1; // the primary generate backward sync log success
+    INVALID_MEMBERSHIP           = 2; // the segment membership is invalid
+    SEGMENT_NOT_FOUND             = 3; // can not found segment unit by this segment id
+    NOT_PRIMARY                  = 4; // i am not primary, can not deal any task which is belong to the primary segment unit
+    WRONG_PRE_PRIMARY_SESSION      = 5; // preprimary session id not matched
+    STILL_AT_PRE_PRIMARY           = 6; // preprimary can not sync log to any secondary segment unit.
+    STALE_MEMBERSHIP             = 7; // if the request has a membership which is not lower than mine
+    YOU_ARE_NOT_IN_MEMBERSHIP       = 8; // if the request instance not in mine membership
+    CL_TOO_SMALL                  = 9; // the secondary cl too small in primary
+    NOT_SECONDARY_PCL_DRIVE_TYPE    = 10; // i am not have secondary pcl drive type, can not deal any sync log task
+    SECONDARY_HAS_HOLD_EXTEND_LEASE = 12; // the secondary has hold pcl drive
+    SERVICE_IS_BUSY               = 13; // service is busy, may be server has too much task in queue
+    UNKNOWN_ERROR                = 1001; // the secondary cl too small in primary
+}
+
+enum PbSegmentUnitStatus {
+   START              = 1; // just created, doesn't have any data, migration is needed
+   MODERATOR_SELECTED  = 2; // a moderator has been selected
+   SECONDARY_ENROLLED  = 3; // Received a sync log request from the PrePrimary.
+   SECONDARY_APPLICANT = 4; // Want to join the segment group
+   PRE_SECONDARY       = 5; // the primary has accepted joining request, and accept read/write request
+   PRE_ARBITER         = 6;
+   PRE_PRIMARY         = 7; // The group has reached consensus about this primary
+   SECONDARY          = 8; // the segment is secondary and readable/writable
+   ARBITER            = 9;
+   PRIMARY            = 10; // the segment is primary and readable/writable
+   OFFLINING           = 12; // segment unit is being offlined
+   OFFLINED           = 13; // segment unit has been offlined
+   DELETING           = 14; // the segment is being deleted
+   DELETED            = 15; // the segment has been deleted. GC should collect this segment
+   BROKEN             = 16; // the disk which contains the segment unit is broken
+   UNKNOWN            = 17;
+}
+
+message PbAsyncSyncLogBatchUnit {
+    required int64 volumeId    = 1;
+    required int32 segIndex    = 2;
+    required int64 ppl         = 3; // the last persisted log. In fact, it is a log id
+
+    // the last committed log. In fact, it is a log id. The reason to have pcl is there might be some missing logs
+    // between pcl and the first log in the logsAfterCL
+    required int64 pcl         = 4;
+    required int64 myself      = 5;
+    required PbSegmentUnitStatus segmentStatus = 6; // request segment unit state
+    required PbMembership membership = 7;
+
+    // when segment unit status is pre-secondary, all logs which are committed in primary but missing in secondary should
+    // be carried to pre-secondary without data, pre-secondary will set the log to be applied and persisted.
+    optional int64 catchUpLogId      = 8;
+    optional int64 preprimarySid     = 9;
+}
+
+message PbAsyncSyncLogsBatchRequest {
+    required int64 requestId = 1;
+    repeated PbAsyncSyncLogBatchUnit segmentUnits = 2;
+}
+
+message PbAsyncSyncLogsBatchResponse {
+    required int64 requestId = 1;
+}
+
+message PbSyncLogData {
+    required int64 checkSum = 1;
+    required int64 offset = 2;
+    optional bytes data = 4;
+}
+
+message PbBackwardSyncLogMetadata {
+    required int64 logId = 1;
+    required int64 uuid  = 2;
+    optional PbBroadcastLogStatus status = 3;
+    optional PbSyncLogData logData = 4;
+}
+
+message PbBackwardSyncLogRequestUnit {
+    required int64 volumeId = 1;
+    required int32 segIndex = 2;
+    required int64 pswpl = 3; //segment wide persisted log
+    required int64 pswcl = 4; //segment wide persisted log
+    required int64 primaryClId = 5;
+    required int64 myself      = 6;
+    required PbErrorCode code  = 7;
+    repeated PbBackwardSyncLogMetadata metadatOfLogs = 8;
+    optional PbMembership membership = 9;
+    optional int64 tooSmallClId  = 10;
+    optional int64 primaryMaxLogIdWhenPsi = 12;
+}
+
+message PbBackwardSyncLogsRequest {
+    required int64 requestId = 1;
+    repeated PbBackwardSyncLogRequestUnit units = 2; 
+}
+
+message PbBackwardSyncLogResponseUnit {
+    required int64 volumeId = 1;
+    required int32 segIndex = 2;
+    // the last committed log. In fact, it is a log id. The reason to have pcl is there might be some missing logs
+    // between pcl and the first log in the logsAfterCL
+    required int64 pcl = 3; // secondary new cl id
+    // the last persisted log. In fact, it is a log id
+    required int64 ppl = 4; // secondary new pl id
+    repeated PbBackwardSyncLogMetadata missDataLogs = 5;
+    optional PbErrorCode code = 6;
+    optional int64 catchUpLogId      = 7;
+}
+
+message PbBackwardSyncLogsResponse {
+    required int64 requestId = 1;
+    required int64 instanceId = 2;
+    repeated PbBackwardSyncLogResponseUnit units = 3;
+}
+
+//-------------------------------------- for sync log end----------------------
+
+//-------------------------------------- for copy page begin--------------------
+enum PbCopyPageStatus {
+    // the primary has responsed the joining secondary that you should migration pages from
+    // primary, the process should do some things:
+    // destroy indexer and create new indexer;
+    // set catch up log and remove the logs which id are less than the id of cacheuplog;
+    // initializing the objects for migration.
+    // wait for the both plal pointer of primary and joining secondary move to catch up log.
+    COPY_PAGE_START = 0;
+
+    // wait for copying page according bitmap.
+    COPY_PAGE_PROCESSING = 2;
+
+    // all pages have been copied from  primary.
+    COPY_PAGE_DONE = 3;
+
+    // when the primary pushes pages to pre-secondary, after some time the primary didn`t receive the pre-secondary
+    // response.
+    COPY_PAGE_TIMEOUT = 4;
+
+    // meeting fetal error which is not recovery when migration.
+    COPY_PAGE_ABORT = 5;
+}
+
+message PbCopyPageRequest {
+    required int64 requestId = 1;
+    required int64 sessionId = 2;
+    required int64 volumeId = 3;
+    required int32 segIndex = 4;
+    required int32 copyPageUnitIndex = 5;
+    required int32 errorCount = 6;
+    required PbCopyPageStatus status = 8;
+    required PbMembership membership = 9;
+    repeated PbPageRequest pageRequests = 10;
+    optional int64 taskId = 11;
+}
+
+message PbPageRequest {
+    required int32 pageIndex = 1;
+    required int64 checksum = 3;
+    required int64 lastLogId = 4;
+    required int32 bufferIndex = 5;
+}
+
+message PbPageResponse {
+    required int32 pageIndex = 1;
+    optional int64 lastLogId = 4;
+}
+
+message PbLogUnit {
+    required int32 pageIndexInUnit = 1;
+    required int64 lastLogId = 2;
+}
+
+message PbCopyPageResponse {
+    required int64 requestId = 1;
+    required int64 sessionId = 2;
+    required int32 copyPageUnitIndex = 3;
+    required PbCopyPageStatus status = 4;
+    repeated PbPageResponse pageResponses = 5;
+    repeated PbLogUnit nexLogUnits = 6;
+    optional int32 nextCopyPageUnitIndex = 7;
+    optional bytes nextBitmap = 8;
+    optional int32 afterNextCopyPageUnitIndex = 9;
+    optional bytes afterNextBitmap = 10;
+}
+
+//---------------------------------------for copy page end---------------------------
+
+message PbCheckRequest {
+    required int64 requestId = 1;
+    required int64 volumeId = 2;
+    required int32 segIndex = 3;
+    required RequestOption requestOption = 4;
+    optional int64 checkInstanceId = 5;
+    optional PbMembership requestPbMembership = 6;
+    optional bool memberHasGone = 7;
+    optional int64 tempPrimary = 8;
+    optional bool streamIo = 9;
+}
+
+message PbCheckResponse {
+    required int64 requestId = 1;
+    optional bool reachable = 2;
+    optional PbMembership PbMembership = 3;
+    optional int64 pcl = 4;
+    optional int64 myInstanceId = 5;
+    optional bool zombie = 6;
+    optional bool migrating = 7;
+}
+
+message LogUuidAndLogId {
+    required int64 logUuid = 1;
+    required int64 logId = 2;
+}
+
+message GiveYouLogIdRequest {
+    required int64 requestId = 1;
+    required int64 volumeId = 2;
+    required int32 segIndex = 3;
+    repeated LogUuidAndLogId logUuidAndLogIds = 4;
+    required PbMembership PbMembership = 5;
+    required int64 myInstanceId = 6;
+    optional int64 pcl = 7;
+}
+
+message GiveYouLogIdResponse {
+    required int64 requestId = 1;
+    required int64 myInstanceId = 2;
+}
+
+message PbGetMembershipRequest {
+    required int64 requestId = 1;
+    required int64 volumeId = 2;
+    required int32 segIndex = 3;
+}
+
+message PbGetMembershipResponse {
+    required int64 requestId = 1;
+    required PbMembership PbMembership = 3;
+}
+
+

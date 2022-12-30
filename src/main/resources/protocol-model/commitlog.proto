@@ -1,0 +1,42 @@
+option java_package = "py.proto";
+
+import "broadcastlog.proto";
+
+enum RequestType {
+    COMMIT = 1;
+    ADD = 2;
+}
+
+message PbCommitlogRequest {
+    required RequestType type = 1;
+    required int64 requestId = 2;
+    required int64 volumeId = 3;
+    required int32 segIndex = 4;
+    required PbMembership membership = 5;
+    repeated PbBroadcastLogManager broadcastManagers = 6; // carry with last log results
+}
+
+message PbCommitlogResponse {
+    required int64 requestId = 1;
+    required int64 volumeId = 2;
+    required int32 segIndex = 3;
+    repeated PbBroadcastLogManager logManagersToCommit = 4; // which contain the logs to be committed.
+    optional string endPoint = 5;
+    optional PbMembership membership = 6;
+    optional bool success = 7;
+}
+
+//-----------------------------------for StartOnlineMigration Begin-----------------------------
+
+message PbStartOnlineMigrationRequest {
+    required int64 requestId = 1;
+    required int64 volumeId = 2;
+
+}
+
+message PbStartOnlineMigrationResponse {
+    required int64 requestId = 1;
+    required int64 instanceId= 2;
+}
+
+//----------------------------------for StartOnlineMigration End-----------------------------------

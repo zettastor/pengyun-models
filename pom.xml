@@ -1,0 +1,128 @@
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns="http://maven.apache.org/POM/4.0.0"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <artifactId>pengyun-models</artifactId>
+  <build>
+    <plugins>
+      <plugin>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <executions>
+          <execution>
+            <configuration>
+              <target>
+                <!--for thrift -->
+                <ant antfile="./build.xml"/>
+                <!--for protocol buffer-->
+                <ant antfile="./build_protocolBuf.xml"/>
+                <!-- for copy file-->
+                <!--<ant antfile="./cp_modified_broadcastlog.xml" />-->
+              </target>
+            </configuration>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <phase>generate-sources</phase>
+          </execution>
+          <execution>
+            <configuration>
+              <target>
+              </target>
+            </configuration>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <id>package</id>
+            <phase>package</phase>
+          </execution>
+          <execution>
+            <configuration>
+              <target>
+              </target>
+            </configuration>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <id>clean</id>
+            <phase>clean</phase>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <artifactId>native-maven-plugin</artifactId>
+        <configuration>
+          <compilerExecutable>g++</compilerExecutable>
+          <compilerProvider>generic-classic</compilerProvider>
+          <compilerStartOptions>
+            <compilerStartOption>-Wall</compilerStartOption>
+          </compilerStartOptions>
+          <linkerEndOptions>
+            <linkerEndOption>-lthrift</linkerEndOption>
+          </linkerEndOptions>
+          <linkerExecutable>g++</linkerExecutable>
+          <linkerProvider>generic-classic</linkerProvider>
+          <linkerStartOptions>
+            <linkerStartOption>-L/usr/local/lib</linkerStartOption>
+          </linkerStartOptions>
+          <sources>
+            <source>
+              <directory>${basedir}/src/main/cpp</directory>
+              <includes>
+                <include>*.cpp</include>
+              </includes>
+            </source>
+            <source>
+              <directory>${basedir}/thrift-generated-src-cpp</directory>
+              <includes>
+                <include>dn_*.cpp</include>
+                <include>shared_*.cpp</include>
+                <include>DataNodeService.cpp</include>
+              </includes>
+            </source>
+            <source>
+              <directory>/usr/local/include/thrift</directory>
+            </source>
+          </sources>
+        </configuration>
+        <extensions>true</extensions>
+        <groupId>org.codehaus.mojo</groupId>
+        <version>1.0-alpha-8</version>
+      </plugin>
+      <plugin>
+        <artifactId>maven-jar-plugin</artifactId>
+        <configuration>
+          <archive>
+            <addMavenDescriptor>false</addMavenDescriptor>
+          </archive>
+        </configuration>
+        <groupId>org.apache.maven.plugins</groupId>
+      </plugin>
+    </plugins>
+  </build>
+
+  <dependencies>
+    <dependency>
+      <artifactId>libthrift</artifactId>
+      <groupId>org.apache.thrift</groupId>
+    </dependency>
+    <dependency>
+      <artifactId>protobuf-java</artifactId>
+      <groupId>com.google.protobuf</groupId>
+    </dependency>
+    <!-- In Java 11, several Java EE dependencies have been removed from the SE and javax.annotation.* is part of that. -->
+    <dependency>
+      <groupId>javax.annotation</groupId>
+      <artifactId>javax.annotation-api</artifactId>
+      <version>1.3.2</version>
+    </dependency>
+  </dependencies>
+  <modelVersion>4.0.0</modelVersion>
+  <!-- NOTE: this pom can overwrite the modified BroadcastLog.java to generated one due to the performance improvement. Wheneven src/main/resources/protocol-model/broadcastlog.proto is changed, we have to modified BroadcastLog.java again based on newly generated BroadcastLog.java. I know it is very lame but I can't find a better way so far. In very near future, we have to abandon this hacking method -->
+
+  <parent>
+    <artifactId>lib-root</artifactId>
+    <groupId>com.pengyun.lib</groupId>
+    <version>1.0.0-OS-SNAPSHOT</version>
+  </parent>
+  <version>1.0.0-OS-SNAPSHOT</version>
+</project>

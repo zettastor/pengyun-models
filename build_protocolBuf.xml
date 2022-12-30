@@ -1,0 +1,31 @@
+<project basedir="." default="all" name="pengyun-models">
+  <property name="procotol.output.dir.java" value="${basedir}/src/main/java"/>
+  <property name="protoc" value="protoc"/>
+  <property name="procotol.model.src.dir.java"
+    value="${basedir}/src/main/resources/protocol-model"/>
+
+  <target description="Removes proc generated files." name="clean-procotol-message">
+    <delete dir="${procotol.output.dir.java}/py/proto"/>
+  </target>
+
+  <!-- target: init -->
+  <target depends="clean-procotol-message" description="Sets up the initial structure." name="init">
+    <mkdir dir="${procotol.output.dir.java}/py/proto"/>
+  </target>
+
+  <target depends="init"
+    description="Compile procotol message for java" name="compile-procotol-message-java">
+    <apply executable="${protoc}" failonerror="true" parallel="false">
+      <arg value="--java_out=${procotol.output.dir.java}"/>
+      <arg value="-I${basedir}"/>
+      <arg line="${procotol.model.src.dir.java}"/>
+      <arg value="-I${basedir}/src/main/resources/protocol-model"/>
+      <fileset dir="${procotol.model.src.dir.java}" includes="*.proto"/>
+    </apply>
+  </target>
+
+
+  <target depends="clean-procotol-message" name="clean"/>
+  <target depends="compile-procotol-message-java" name="all"/>
+</project>
+
