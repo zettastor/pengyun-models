@@ -1,1 +1,0 @@
-Thrift model for defining the structure and data types of core functions for ZettaStor DBS.

@@ -1,6 +1,6 @@
 <project basedir="." default="all" name="pengyun-models">
   <property name="procotol.output.dir.java" value="${basedir}/src/main/java"/>
-  <property name="protoc" value="protoc"/>
+  <property name="protoc" value="/usr/local/protobuf/bin/protoc"/>
   <property name="procotol.model.src.dir.java"
     value="${basedir}/src/main/resources/protocol-model"/>
 

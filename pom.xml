@@ -14,8 +14,6 @@
                 <ant antfile="./build.xml"/>
                 <!--for protocol buffer-->
                 <ant antfile="./build_protocolBuf.xml"/>
-                <!-- for copy file-->
-                <!--<ant antfile="./cp_modified_broadcastlog.xml" />-->
               </target>
             </configuration>
             <goals>
